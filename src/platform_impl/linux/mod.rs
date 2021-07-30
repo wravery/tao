@@ -24,7 +24,7 @@ pub use self::{
   global_shortcut::{GlobalShortcut, ShortcutManager},
   keycode::{keycode_from_scancode, keycode_to_scancode},
   menu::{Menu, MenuItemAttributes},
-  system_tray::{SystemTray, SystemTrayBuilder},
+  system_tray::{SystemTray, SystemTrayBuilder, TrayMenu},
 };
 pub use event_loop::{EventLoop, EventLoopProxy, EventLoopWindowTarget};
 pub use monitor::{MonitorHandle, VideoMode};

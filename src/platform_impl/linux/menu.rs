@@ -9,6 +9,7 @@ use gtk::{
 
 use super::{
   keyboard::key_to_raw_key,
+  system_tray::{KsniTray, TrayMenuItem},
   window::{WindowId, WindowRequest},
 };
 use crate::{
@@ -24,16 +25,6 @@ macro_rules! menuitem {
     item.add_accelerator("activate", $accel_group, key, mods, AccelFlags::VISIBLE);
     Some(item)
   }};
-}
-
-macro_rules! ksni_menuitem {
-  ( $description:expr ) => {
-    ksni::menu::StandardItem {
-      label: $description.into(),
-      ..Default::default()
-    }
-    .into()
-  };
 }
 
 #[derive(Debug, Clone)]
@@ -67,13 +58,19 @@ unsafe impl Send for Menu {}
 unsafe impl Sync for Menu {}
 
 #[derive(Debug, Clone)]
+pub enum InnerItem {
+  Gtk(GtkMenuItem),
+  Ksni(TrayMenuItem),
+}
+
+#[derive(Debug, Clone)]
 pub struct MenuItemAttributes {
-  id: MenuId,
-  key: Option<Accelerator>,
-  selected: bool,
-  enabled: bool,
-  menu_type: MenuType,
-  gtk_item: GtkMenuItem,
+  pub id: MenuId,
+  pub key: Option<Accelerator>,
+  pub selected: bool,
+  pub enabled: bool,
+  pub menu_type: MenuType,
+  pub inner_item: InnerItem,
 }
 
 impl MenuItemAttributes {
@@ -82,16 +79,35 @@ impl MenuItemAttributes {
   }
 
   pub fn set_enabled(&mut self, is_enabled: bool) {
-    self.gtk_item.set_sensitive(is_enabled);
+    match &self.inner_item {
+      InnerItem::Gtk(i) => i.set_sensitive(is_enabled),
+      InnerItem::Ksni(i) => {
+        let mut item = i.0.write().unwrap();
+        match &mut *item {
+          ksni::MenuItem::Standard(s) => s.enabled = is_enabled,
+          ksni::MenuItem::Checkmark(s) => s.enabled = is_enabled,
+          ksni::MenuItem::SubMenu(s) => s.enabled = is_enabled,
+          _ => unimplemented!(), // Such menu item shouldn't reach here
+        }
+      }
+    }
   }
 
   pub fn set_title(&mut self, title: &str) {
-    self.gtk_item.set_label(title);
+    match &self.inner_item {
+      InnerItem::Gtk(i) => i.set_label(title),
+      _ => todo!(),
+    }
   }
 
   pub fn set_selected(&mut self, is_selected: bool) {
-    if let Some(item) = self.gtk_item.downcast_ref::<CheckMenuItem>() {
-      item.set_active(is_selected);
+    match &self.inner_item {
+      InnerItem::Gtk(i) => {
+        if let Some(item) = i.downcast_ref::<CheckMenuItem>() {
+          item.set_active(is_selected);
+        }
+      }
+      _ => todo!(),
     }
   }
 
@@ -124,12 +140,12 @@ impl Menu {
     selected: bool,
     menu_type: MenuType,
   ) -> CustomMenuItem {
-    let gtk_item = if selected {
+    let inner_item = if selected {
       let item = CheckMenuItem::with_label(&title);
       item.set_active(true);
-      item.upcast::<GtkMenuItem>()
+      InnerItem::Gtk(item.upcast::<GtkMenuItem>())
     } else {
-      GtkMenuItem::with_label(title)
+      InnerItem::Gtk(GtkMenuItem::with_label(title))
     };
     let custom_menu = MenuItemAttributes {
       id: menu_id,
@@ -137,7 +153,7 @@ impl Menu {
       selected,
       enabled,
       menu_type,
-      gtk_item,
+      inner_item,
     };
 
     self.gtk_items.push(GtkMenuInfo {
@@ -188,153 +204,6 @@ impl Menu {
     menu
   }
 
-  pub fn to_ksnimenu(
-    &self,
-    tx: &Sender<(WindowId, WindowRequest)>,
-    window_id: WindowId,
-  ) -> super::system_tray::KsniMenu {
-    let mut v = vec![];
-    for item in &self.gtk_items {
-      if let Some(m) = Self::generate_ksnimenu_item(item, tx.clone(), window_id) {
-        v.push(m);
-      }
-    }
-    v
-  }
-
-  fn generate_ksnimenu_item(
-    item: &GtkMenuInfo,
-    tx: Sender<(WindowId, WindowRequest)>,
-    window_id: WindowId,
-  ) -> Option<super::system_tray::KsniMenuItem> {
-    match item {
-      GtkMenuInfo {
-        menu_type: GtkMenuType::Custom,
-        sub_menu: None,
-        custom_menu_item: Some(custom_item),
-        ..
-      } => {
-        let id = custom_item.id;
-        let label = if let Some(title) = custom_item.gtk_item.get_label() {
-          title.into()
-        } else {
-          "".into()
-        };
-
-        let ksni_item = if custom_item.selected {
-          let checked = match custom_item.gtk_item.downcast_ref::<CheckMenuItem>() {
-            Some(checkmenu_item) => checkmenu_item.get_active(),
-            None => false,
-          };
-          ksni::menu::CheckmarkItem {
-            label,
-            enabled: custom_item.gtk_item.get_sensitive(),
-            checked,
-            visible: true,
-            activate: Box::new(move |_| {
-              if let Err(e) = tx.send((window_id, WindowRequest::Menu((None, Some(id))))) {
-                log::warn!("Fail to send menu request: {}", e);
-              }
-            }),
-            ..Default::default()
-          }
-          .into()
-        } else {
-          ksni::menu::StandardItem {
-            label,
-            enabled: custom_item.gtk_item.get_sensitive(),
-            visible: true,
-            activate: Box::new(move |_| {
-              if let Err(e) = tx.send((window_id, WindowRequest::Menu((None, Some(id))))) {
-                log::warn!("Fail to send menu request: {}", e);
-              }
-            }),
-            ..Default::default()
-          }
-          .into()
-        };
-        Some(ksni_item)
-      }
-      GtkMenuInfo {
-        menu_type: GtkMenuType::Submenu,
-        sub_menu:
-          Some(SubmenuDetail {
-            menu,
-            title,
-            enabled,
-            ..
-          }),
-        custom_menu_item: None,
-        ..
-      } => {
-        let mut submenu = vec![];
-        for item in &menu.gtk_items {
-          if let Some(i) = Self::generate_ksnimenu_item(&item, tx.clone(), window_id) {
-            submenu.push(i);
-          }
-        }
-        let ksni_item = ksni::menu::SubMenu {
-          label: title.clone(),
-          enabled: *enabled,
-          visible: true,
-          submenu,
-          ..Default::default()
-        }
-        .into();
-        Some(ksni_item)
-      }
-      GtkMenuInfo {
-        menu_type: GtkMenuType::Native,
-        menu_item: Some(MenuItem::Separator),
-        ..
-      } => Some(ksni::MenuItem::Separator),
-      GtkMenuInfo {
-        menu_type: GtkMenuType::Native,
-        menu_item: Some(MenuItem::About(s)),
-        ..
-      } => Some(ksni_menuitem!(&format!("About {}", s))),
-      GtkMenuInfo {
-        menu_type: GtkMenuType::Native,
-        menu_item: Some(MenuItem::Hide),
-        ..
-      } => Some(ksni_menuitem!("Hide")),
-      GtkMenuInfo {
-        menu_type: GtkMenuType::Native,
-        menu_item: Some(MenuItem::CloseWindow),
-        ..
-      } => Some(ksni_menuitem!("Close Window")),
-      GtkMenuInfo {
-        menu_type: GtkMenuType::Native,
-        menu_item: Some(MenuItem::Quit),
-        ..
-      } => Some(ksni_menuitem!("Quit")),
-      GtkMenuInfo {
-        menu_type: GtkMenuType::Native,
-        menu_item: Some(MenuItem::Copy),
-        ..
-      } => Some(ksni_menuitem!("Copy")),
-      GtkMenuInfo {
-        menu_type: GtkMenuType::Native,
-        menu_item: Some(MenuItem::Cut),
-        ..
-      } => Some(ksni_menuitem!("Cut")),
-      GtkMenuInfo {
-        menu_type: GtkMenuType::Native,
-        menu_item: Some(MenuItem::SelectAll),
-        ..
-      } => Some(ksni_menuitem!("Select All")),
-      GtkMenuInfo {
-        menu_type: GtkMenuType::Native,
-        menu_item: Some(MenuItem::Paste),
-        ..
-      } => Some(ksni_menuitem!("Paste")),
-      _ => {
-        log::error!("Wrong combination of GtkMenuInfo");
-        None
-      }
-    }
-  }
-
   pub(crate) fn generate_menu<M: gtk::prelude::IsA<gtk::MenuShell>>(
     self,
     menu: &mut M,
@@ -365,7 +234,7 @@ impl Menu {
           custom_menu_item:
             Some(MenuItemAttributes {
               enabled,
-              gtk_item,
+              inner_item: InnerItem::Gtk(gtk_item),
               id,
               key,
               ..

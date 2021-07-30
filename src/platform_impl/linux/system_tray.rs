@@ -2,22 +2,34 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::{
-  error::OsError, event_loop::EventLoopWindowTarget, system_tray::SystemTray as RootSystemTray,
+  accelerator::Accelerator,
+  error::OsError,
+  event_loop::EventLoopWindowTarget,
+  menu::{CustomMenuItem, MenuId, MenuItem, MenuType},
+  system_tray::SystemTray as RootSystemTray,
 };
 
 use glib::Sender;
-use std::path::PathBuf;
+use std::{
+  fmt::{self, Debug, Formatter},
+  path::PathBuf,
+  sync::{Arc, RwLock},
+};
 
-use super::{menu::Menu, window::WindowRequest, WindowId};
+use super::{
+  menu::{InnerItem, MenuItemAttributes},
+  window::WindowRequest,
+  WindowId,
+};
 
 pub struct SystemTrayBuilder {
-  tray_menu: Option<Menu>,
+  tray_menu: Option<TrayMenu>,
   icon: PathBuf,
 }
 
 impl SystemTrayBuilder {
   #[inline]
-  pub fn new(icon: PathBuf, tray_menu: Option<Menu>) -> Self {
+  pub fn new(icon: PathBuf, tray_menu: Option<TrayMenu>) -> Self {
     Self { tray_menu, icon }
   }
 
@@ -57,16 +69,12 @@ impl SystemTray {
     });
   }
 
-  pub fn set_menu(&mut self, tray_menu: &Menu) {
+  pub fn set_menu(&mut self, tray_menu: &TrayMenu) {
     self.tray_handle.update(|tray: &mut KsniTray| {
       tray.set_menu(tray_menu.clone());
     });
   }
 }
-
-/// Type alias for ksni menu.
-pub(super) type KsniMenu = Vec<ksni::MenuItem<KsniTray>>;
-pub(super) type KsniMenuItem = ksni::MenuItem<KsniTray>;
 
 /// Holds all properties and signals of the tray and manages the communcation via DBus.
 pub struct KsniTray {
@@ -74,7 +82,7 @@ pub struct KsniTray {
   icon_name: String,
   icon_theme_path: String,
   status: ksni::Status,
-  menu: Option<Menu>,
+  menu: Option<TrayMenu>,
   sender: Sender<(WindowId, WindowRequest)>,
 }
 
@@ -116,7 +124,7 @@ impl KsniTray {
   pub fn new_with_menu(
     title: &str,
     icon: &PathBuf,
-    menu: &Menu,
+    menu: &TrayMenu,
     sender: Sender<(WindowId, WindowRequest)>,
   ) -> Self {
     let (icon_name, icon_theme_path) = Self::split_icon(&icon);
@@ -139,7 +147,7 @@ impl KsniTray {
   }
 
   /// Updates the menu.
-  pub fn set_menu(&mut self, menu: Menu) {
+  pub fn set_menu(&mut self, menu: TrayMenu) {
     self.menu = Some(menu);
   }
 
@@ -178,11 +186,72 @@ impl ksni::Tray for KsniTray {
     self.status
   }
 
-  fn menu(&self) -> KsniMenu {
-    if let Some(m) = &self.menu {
-      m.to_ksnimenu(&self.sender, WindowId::dummy())
+  fn menu(&self) -> Vec<ksni::MenuItem<Self>> {
+    todo!()
+  }
+}
+
+#[derive(Debug, Clone)]
+pub struct TrayMenu(Vec<TrayMenuItem>);
+#[derive(Clone)]
+pub struct TrayMenuItem(pub(crate) Arc<RwLock<ksni::MenuItem<KsniTray>>>);
+
+impl TrayMenu {
+  pub fn new() -> Self {
+    Self(Vec::new())
+  }
+
+  pub fn add_item(
+    &mut self,
+    menu_id: MenuId,
+    title: &str,
+    accelerators: Option<Accelerator>,
+    enabled: bool,
+    selected: bool,
+    menu_type: MenuType,
+  ) -> CustomMenuItem {
+    let item: ksni::MenuItem<KsniTray> = if selected {
+      ksni::menu::CheckmarkItem {
+        label: title.into(),
+        enabled,
+        checked: selected,
+        ..Default::default()
+      }
+      .into()
     } else {
-      vec![]
-    }
+      ksni::menu::StandardItem {
+        label: title.into(),
+        enabled,
+        ..Default::default()
+      }
+      .into()
+    };
+    let item = TrayMenuItem(Arc::new(RwLock::new(item)));
+    let custom_menu = MenuItemAttributes {
+      id: menu_id,
+      key: accelerators,
+      selected,
+      enabled,
+      menu_type,
+      inner_item: InnerItem::Ksni(item),
+    };
+    CustomMenuItem(custom_menu)
+  }
+
+  pub fn add_native_item(
+    &mut self,
+    item: MenuItem,
+    _menu_type: MenuType,
+  ) -> Option<CustomMenuItem> {
+    None
+  }
+
+  pub fn add_submenu(&mut self, title: &str, enabled: bool, submenu: TrayMenu) {}
+}
+
+// FIXME: implement this on ksni crate
+impl Debug for TrayMenuItem {
+  fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+    f.write_str("TrayMenuItem")
   }
 }

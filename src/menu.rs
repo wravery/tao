@@ -32,7 +32,10 @@ use crate::{
 ///
 /// ## Platform-specific
 ///
+#[cfg(not(target_os = "linux"))]
 pub struct ContextMenu(pub(crate) Menu);
+#[cfg(target_os = "linux")]
+pub struct ContextMenu(pub(crate) TrayMenu);
 /// Object that allows you to create a `MenuBar`, menu.
 ///
 /// ## Platform-specific
@@ -101,6 +104,7 @@ pub(crate) struct Menu {
   pub(crate) menu_type: MenuType,
 }
 
+#[cfg(not(target_os = "linux"))]
 impl ContextMenu {
   /// Creates a new Menu for context (popup, tray etc..).
   pub fn new() -> Self {
@@ -136,9 +140,53 @@ impl ContextMenu {
   }
 }
 
+#[cfg(not(target_os = "linux"))]
 impl Default for ContextMenu {
   fn default() -> Self {
     Self::new()
+  }
+}
+
+#[derive(Debug, Clone)]
+#[cfg(target_os = "linux")]
+pub(crate) struct TrayMenu {
+  pub(crate) menu_platform: crate::platform_impl::TrayMenu,
+  pub(crate) menu_type: MenuType,
+}
+
+#[cfg(target_os = "linux")]
+impl ContextMenu {
+  /// Creates a new Menu for context (popup, tray etc..).
+  pub fn new() -> Self {
+    Self(TrayMenu {
+      menu_platform: crate::platform_impl::TrayMenu::new(),
+      menu_type: MenuType::ContextMenu,
+    })
+  }
+
+  /// Add a submenu.
+  pub fn add_submenu(&mut self, title: &str, enabled: bool, submenu: ContextMenu) {
+    self
+      .0
+      .menu_platform
+      .add_submenu(title, enabled, submenu.0.menu_platform);
+  }
+
+  /// Add new item to this menu.
+  pub fn add_item(&mut self, item: MenuItemAttributes<'_>) -> CustomMenuItem {
+    self.0.menu_platform.add_item(
+      item.id,
+      item.title,
+      item.keyboard_accelerator,
+      item.enabled,
+      item.selected,
+      MenuType::ContextMenu,
+    )
+  }
+
+  /// Add new item to this menu.
+  pub fn add_native_item(&mut self, item: MenuItem) -> Option<CustomMenuItem> {
+    self.0.menu_platform.add_native_item(item, self.0.menu_type)
   }
 }
 
