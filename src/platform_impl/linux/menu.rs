@@ -77,27 +77,6 @@ pub struct MenuItemAttributes {
 }
 
 impl MenuItemAttributes {
-  pub fn new(
-    id: MenuId,
-    key: Option<Accelerator>,
-    selected: bool,
-    enabled: bool,
-    menu_type: MenuType,
-    gtk_item: GtkMenuItem,
-  ) -> Self {
-    let mut instance = Self {
-      id,
-      key,
-      enabled,
-      selected,
-      menu_type,
-      gtk_item,
-    };
-    instance.set_enabled(enabled);
-    instance.set_selected(selected);
-    instance
-  }
-
   pub fn id(self) -> MenuId {
     self.id
   }
@@ -152,14 +131,14 @@ impl Menu {
     } else {
       GtkMenuItem::with_label(title)
     };
-    let custom_menu = MenuItemAttributes::new(
-      menu_id,
-      accelerators,
+    let custom_menu = MenuItemAttributes {
+      id: menu_id,
+      key: accelerators,
       selected,
       enabled,
       menu_type,
       gtk_item,
-    );
+    };
 
     self.gtk_items.push(GtkMenuInfo {
       menu_type: GtkMenuType::Custom,
