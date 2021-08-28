@@ -658,6 +658,7 @@ impl Window {
   ///
   /// ## Platform-specific
   ///
+  /// - **Windows**: Ignored if the window is hidden.
   /// - **iOS / Android:** Unsupported.
   #[inline]
   pub fn set_maximized(&self, maximized: bool) {
