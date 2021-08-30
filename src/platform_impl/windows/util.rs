@@ -13,7 +13,7 @@ use crate::{dpi::PhysicalSize, window::CursorIcon};
 use winapi::{
   ctypes::wchar_t,
   shared::{
-    minwindef::{BOOL, DWORD, TRUE, UINT},
+    minwindef::{BOOL, DWORD, FALSE, TRUE, UINT},
     windef::{DPI_AWARENESS_CONTEXT, HICON, HMONITOR, HWND, LPRECT, RECT},
   },
   um::{
@@ -214,8 +214,11 @@ pub fn is_maximized(window: HWND) -> bool {
   unsafe {
     let mut placement: winuser::WINDOWPLACEMENT = mem::zeroed();
     placement.length = mem::size_of::<winuser::WINDOWPLACEMENT>() as u32;
-    winuser::GetWindowPlacement(window, &mut placement);
-    placement.showCmd == winuser::SW_MAXIMIZE as u32
+    if winuser::GetWindowPlacement(window, &mut placement) == FALSE {
+      false
+    } else {
+      placement.showCmd == winuser::SW_MAXIMIZE as u32
+    }
   }
 }
 
