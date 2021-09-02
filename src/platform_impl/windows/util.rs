@@ -13,7 +13,7 @@ use crate::{dpi::PhysicalSize, window::CursorIcon};
 use winapi::{
   ctypes::wchar_t,
   shared::{
-    minwindef::{BOOL, DWORD, TRUE, UINT},
+    minwindef::{BOOL, DWORD, FALSE, TRUE, UINT},
     windef::{DPI_AWARENESS_CONTEXT, HBITMAP, HICON, HMONITOR, HWND, LPRECT, RECT},
   },
   um::{
@@ -274,10 +274,13 @@ pub fn get_hicon_from_buffer(buffer: &[u8], width: i32, height: i32) -> Option<H
   }
 }
 
-pub fn get_hbitmap_from_hicon(hicon: HICON, width: i32, height: i32) -> HBITMAP {
+pub fn get_hbitmap_from_hicon(hicon: HICON, width: i32, height: i32) -> Option<HBITMAP> {
   unsafe {
     let mut icon_info: winuser::ICONINFO = std::mem::zeroed();
-    winuser::GetIconInfo(hicon, &mut icon_info as _);
+    if winuser::GetIconInfo(hicon, &mut icon_info as _) == FALSE {
+      debug!("Unable to GetIconInfo");
+      return None;
+    }
 
     let hbitmap: HBITMAP;
     hbitmap = winuser::CopyImage(
@@ -287,7 +290,7 @@ pub fn get_hbitmap_from_hicon(hicon: HICON, width: i32, height: i32) -> HBITMAP 
       height,
       winuser::LR_CREATEDIBSECTION,
     ) as _;
-    hbitmap
+    Some(hbitmap)
   }
 }
 

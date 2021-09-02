@@ -121,14 +121,15 @@ impl MenuItemAttributes {
   pub fn set_icon(&self, icon: Vec<u8>) {
     if let Some(hicon) = super::util::get_hicon_from_buffer(&icon[..], 32, 32) {
       unsafe {
-        let hbitmap = util::get_hbitmap_from_hicon(hicon, 16, 16);
-        let info = winuser::MENUITEMINFOA {
-          cbSize: std::mem::size_of::<winuser::MENUITEMINFOA>() as _,
-          fMask: winuser::MIIM_BITMAP,
-          hbmpItem: hbitmap,
-          ..Default::default()
-        };
-        winuser::SetMenuItemInfoA(self.1, self.0 as u32, minwindef::FALSE, &info);
+        if let Some(hbitmap) = util::get_hbitmap_from_hicon(hicon, 16, 16) {
+          let info = winuser::MENUITEMINFOA {
+            cbSize: std::mem::size_of::<winuser::MENUITEMINFOA>() as _,
+            fMask: winuser::MIIM_BITMAP,
+            hbmpItem: hbitmap,
+            ..Default::default()
+          };
+          winuser::SetMenuItemInfoA(self.1, self.0 as u32, minwindef::FALSE, &info);
+        }
       }
     };
   }
