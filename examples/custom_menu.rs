@@ -60,6 +60,8 @@ fn main() {
   second_menu.add_native_item(MenuItem::Separator);
   // create custom item `Change menu` children of `second_menu`
   let change_menu = second_menu.add_item(MenuItemAttributes::new("Change menu"));
+  let change_icon = second_menu.add_item(MenuItemAttributes::new("Change Icon"));
+  let icon = include_bytes!("icon.ico");
 
   // add all our childs to menu_bar_menu (order is how they'll appear)
   menu_bar_menu.add_submenu("My app", true, first_menu);
@@ -97,10 +99,14 @@ fn main() {
         // without re-rendering the whole menu
         test_menu_item.set_enabled(false);
         test_menu_item.set_title("Menu disabled");
-        test_menu_item.set_selected(true);
         #[cfg(target_os = "macos")]
         test_menu_item.set_native_image(NativeImage::StatusUnavailable);
       }
+      Event::MenuEvent {
+        menu_id,
+        origin: MenuType::MenuBar,
+        ..
+      } if menu_id == change_icon.clone().id() => change_icon.set_icon(icon.to_vec()),
       Event::MenuEvent {
         menu_id,
         origin: MenuType::MenuBar,
