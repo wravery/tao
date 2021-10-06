@@ -12,12 +12,15 @@ use std::{
 use crate::{dpi::PhysicalSize, window::CursorIcon};
 
 use webview2_com_sys::Windows::Win32::{
-  Foundation::{BOOL, FARPROC, HWND, LPARAM, LRESULT, POINT, PWSTR, RECT, WPARAM},
+  Foundation::{BOOL, FARPROC, HANDLE, HWND, LPARAM, LRESULT, POINT, PWSTR, RECT, WPARAM},
   Globalization::lstrlenW,
-  Graphics::Gdi::{ClientToScreen, InvalidateRgn, HMONITOR, HRGN},
+  Graphics::Gdi::{ClientToScreen, InvalidateRgn, HBITMAP, HMONITOR, HRGN},
   System::{LibraryLoader::*, SystemServices::DPI_AWARENESS_CONTEXT},
   UI::{
-    Controls::LR_DEFAULTCOLOR, HiDpi::*, KeyboardAndMouseInput::*, TextServices::HKL,
+    Controls::{LR_CREATEDIBSECTION, LR_DEFAULTCOLOR},
+    HiDpi::*,
+    KeyboardAndMouseInput::*,
+    TextServices::HKL,
     WindowsAndMessaging::*,
   },
 };
@@ -348,20 +351,23 @@ pub fn get_hicon_from_buffer(buffer: &[u8], width: i32, height: i32) -> Option<H
 
 pub fn get_hbitmap_from_hicon(hicon: HICON, width: i32, height: i32) -> Option<HBITMAP> {
   unsafe {
-    let mut icon_info: winuser::ICONINFO = std::mem::zeroed();
-    if winuser::GetIconInfo(hicon, &mut icon_info as _) == FALSE {
+    let mut icon_info: ICONINFO = std::mem::zeroed();
+    if !GetIconInfo(hicon, &mut icon_info as _).as_bool() {
       debug!("Unable to GetIconInfo");
       return None;
     }
 
     let hbitmap: HBITMAP;
-    hbitmap = winuser::CopyImage(
-      icon_info.hbmColor as _,
-      winuser::IMAGE_BITMAP,
-      width,
-      height,
-      winuser::LR_CREATEDIBSECTION,
-    ) as _;
+    hbitmap = HBITMAP(
+      CopyImage(
+        HANDLE(icon_info.hbmColor.0),
+        IMAGE_BITMAP,
+        width,
+        height,
+        LR_CREATEDIBSECTION,
+      )
+      .0,
+    );
     Some(hbitmap)
   }
 }
